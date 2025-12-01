@@ -1,0 +1,375 @@
+// render_cube_textured.rs
+use std::path::Path;
+use std::num::NonZeroU32;
+
+use wgpu_bootstrap::{
+    cgmath, egui,
+    util::orbit_camera::{CameraUniform, OrbitCamera},
+    wgpu::{self, util::DeviceExt},
+    App, Context,
+};
+
+const SHADER_FILE: &str = "shaders/cube_textured_shader.wgsl";
+const TEXTURE_FILE: &str = "textures/texture.png";
+
+
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct Vertex {
+    position: [f32; 3],
+    normal: [f32; 3],
+    uv: [f32; 2]
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct LightUniform {
+    light: [f32; 4],
+}
+
+impl Vertex {
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                // location 0: position
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                // location 1: normal
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                // location 2: uv
+                wgpu::VertexAttribute {
+                    offset: (std::mem::size_of::<[f32; 3]>() * 2) as wgpu::BufferAddress,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+            ],
+        }
+    }
+}
+
+
+
+
+// Vertices: 24 vertices (4 per face), each has position, normal and uv.
+const VERTICES: &[Vertex] = &[
+    // Front (+Z)
+    Vertex { position: [0.5,  0.5,  0.5], normal: [0.0, 0.0, 1.0], uv: [1.0, 0.0] },
+    Vertex { position: [-0.5, 0.5,  0.5], normal: [0.0, 0.0, 1.0], uv: [0.0, 0.0] },
+    Vertex { position: [-0.5,-0.5,  0.5], normal: [0.0, 0.0, 1.0], uv: [0.0, 1.0] },
+    Vertex { position: [0.5, -0.5,  0.5], normal: [0.0, 0.0, 1.0], uv: [1.0, 1.0] },
+    // Right (+X)
+    Vertex { position: [0.5,  0.5,  0.5], normal: [1.0, 0.0, 0.0], uv: [1.0, 0.0] },
+    Vertex { position: [0.5, -0.5,  0.5], normal: [1.0, 0.0, 0.0], uv: [0.0, 0.0] },
+    Vertex { position: [0.5, -0.5, -0.5], normal: [1.0, 0.0, 0.0], uv: [0.0, 1.0] },
+    Vertex { position: [0.5,  0.5, -0.5], normal: [1.0, 0.0, 0.0], uv: [1.0, 1.0] },
+    // Back (-Z)
+    Vertex { position: [0.5,  0.5, -0.5], normal: [0.0, 0.0, -1.0], uv: [1.0, 0.0] },
+    Vertex { position: [0.5, -0.5, -0.5], normal: [0.0, 0.0, -1.0], uv: [0.0, 0.0] },
+    Vertex { position: [-0.5,-0.5, -0.5], normal: [0.0, 0.0, -1.0], uv: [0.0, 1.0] },
+    Vertex { position: [-0.5, 0.5, -0.5], normal: [0.0, 0.0, -1.0], uv: [1.0, 1.0] },
+    // Left (-X)
+    Vertex { position: [-0.5, 0.5,  0.5], normal: [-1.0, 0.0, 0.0], uv: [1.0, 0.0] },
+    Vertex { position: [-0.5, 0.5, -0.5], normal: [-1.0, 0.0, 0.0], uv: [0.0, 0.0] },
+    Vertex { position: [-0.5,-0.5, -0.5], normal: [-1.0, 0.0, 0.0], uv: [0.0, 1.0] },
+    Vertex { position: [-0.5,-0.5,  0.5], normal: [-1.0, 0.0, 0.0], uv: [1.0, 1.0] },
+    // Top (+Y)
+    Vertex { position: [0.5,  0.5,  0.5], normal: [0.0, 1.0, 0.0], uv: [1.0, 0.0] },
+    Vertex { position: [0.5,  0.5, -0.5], normal: [0.0, 1.0, 0.0], uv: [0.0, 0.0] },
+    Vertex { position: [-0.5, 0.5, -0.5], normal: [0.0, 1.0, 0.0], uv: [0.0, 1.0] },
+    Vertex { position: [-0.5, 0.5,  0.5], normal: [0.0, 1.0, 0.0], uv: [1.0, 1.0] },
+    // Bottom (-Y)
+    Vertex { position: [0.5, -0.5,  0.5], normal: [0.0, -1.0, 0.0], uv: [1.0, 0.0] },
+    Vertex { position: [-0.5,-0.5,  0.5], normal: [0.0, -1.0, 0.0], uv: [0.0, 0.0] },
+    Vertex { position: [-0.5,-0.5, -0.5], normal: [0.0, -1.0, 0.0], uv: [0.0, 1.0] },
+    Vertex { position: [0.5, -0.5, -0.5], normal: [0.0, -1.0, 0.0], uv: [1.0, 1.0] },
+];
+
+#[rustfmt::skip]
+const INDEXES: &[u32] = &[
+     0,  1,  2,  0,  2,  3,   // front
+     4,  5,  6,  4,  6,  7,   // right
+     8,  9, 10,  8, 10, 11,   // back
+    12, 13, 14, 12, 14, 15,   // left
+    16, 17, 18, 16, 18, 19,   // top
+    20, 21, 22, 20, 22, 23,   // bottom
+];
+
+pub struct TexturedCubeApp {
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    render_pipeline: wgpu::RenderPipeline,
+    num_indices: u32,
+    camera: OrbitCamera,
+    texture_bind_group: wgpu::BindGroup,
+    light_bind_group: wgpu::BindGroup,
+    // _light_buffer: wgpu::Buffer,
+}
+
+impl TexturedCubeApp {
+    pub fn new(context: &Context) -> Self {
+        let index_buffer = context
+            .device()
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Index Buffer"),
+                contents: bytemuck::cast_slice(INDEXES),
+                usage: wgpu::BufferUsages::INDEX,
+            });
+
+        let num_indices = INDEXES.len() as u32;
+
+        let vertex_buffer =
+            context
+                .device()
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Vertex Buffer"),
+                    contents: bytemuck::cast_slice(VERTICES),
+                    usage: wgpu::BufferUsages::VERTEX,
+                });
+
+        // GROUP(0)
+        let camera_bind_group_layout = context
+            .device()
+            .create_bind_group_layout(&CameraUniform::desc());
+
+        // GROUP(1)
+        let texture_bind_group_layout = context.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("texture_bind_group_layout"),
+            entries: &[
+                // binding 0: texture view
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                // binding 1: sampler
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+
+        // GROUP(2)
+        // --- LIGHT (group 2)
+        let light_bind_group_layout = context.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("light_bind_group_layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        let initial_light = LightUniform { light: [0.0, 0.0, 2.0, 0.0] };
+
+        let light_buffer = context.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Light Buffer"),
+            contents: bytemuck::bytes_of(&initial_light),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let light_bind_group = context.device().create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("light_bind_group"),
+            layout: &light_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &light_buffer,
+                        offset: 0,
+                        size: None,
+                    }),
+                },
+            ],
+        });
+
+        // SHADER
+        let shader_path = Path::new(env!("CARGO_MANIFEST_DIR")).join(SHADER_FILE);
+        let shader_src =
+            std::fs::read_to_string(&shader_path).expect("failed to read shader file");
+        let shader = context.device().create_shader_module(
+            wgpu::ShaderModuleDescriptor {
+                label: Some("textured_shader"),
+                source: wgpu::ShaderSource::Wgsl(shader_src.into()),
+            },
+        );
+
+        // PIPELINE layout: group0 = camera, group1 = texture
+        let pipeline_layout = context.device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("pipeline_layout"),
+            bind_group_layouts: &[&camera_bind_group_layout, &texture_bind_group_layout, &light_bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        let render_pipeline = context.device().create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("render_pipeline"),
+                    layout: Some(&pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader,
+                        entry_point: "vs_main",
+                        buffers: &[Vertex::desc()],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader,
+                        entry_point: "fs_main",
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: context.format(),
+                            blend: Some(wgpu::BlendState::REPLACE),
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        strip_index_format: None,
+                        front_face: wgpu::FrontFace::Ccw,
+                        cull_mode: Some(wgpu::Face::Back),
+                        // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
+                        polygon_mode: wgpu::PolygonMode::Fill,
+                        // Requires Features::DEPTH_CLIP_CONTROL
+                        unclipped_depth: false,
+                        // Requires Features::CONSERVATIVE_RASTERIZATION
+                        conservative: false,
+                    },
+                    depth_stencil: Some(wgpu::DepthStencilState {
+                        format: context.depth_stencil_format(),
+                        depth_write_enabled: true,
+                        depth_compare: wgpu::CompareFunction::Less,
+                        stencil: wgpu::StencilState::default(),
+                        bias: wgpu::DepthBiasState::default(),
+                    }),
+                    multisample: wgpu::MultisampleState {
+                        count: 1,
+                        mask: !0,
+                        alpha_to_coverage_enabled: false,
+                    },
+                    multiview: None,
+                    cache: None,
+                });
+
+        // LOAD img
+        let shader_path = Path::new(env!("CARGO_MANIFEST_DIR")).join(SHADER_FILE);
+        let shader_src =
+            std::fs::read_to_string(&shader_path).expect("failed to read shader file");
+        let shader = context.device().create_shader_module(
+            wgpu::ShaderModuleDescriptor {
+                label: Some("textured_shader"),
+                source: wgpu::ShaderSource::Wgsl(shader_src.into()),
+            },
+        );
+
+        let img_path = Path::new(env!("CARGO_MANIFEST_DIR")).join(TEXTURE_FILE);
+        let img = image::open(&img_path).expect("failed to load texture").to_rgba8();
+        let (width, height) = img.dimensions();
+        let texture_size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
+
+        let texture = context.device().create_texture(&wgpu::TextureDescriptor {
+            label: Some("diffuse_texture"),
+            size: texture_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+
+        // upload
+        context.queue().write_texture(
+            wgpu::ImageCopyTexture { texture: &texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            &img,
+            wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(4 * width), rows_per_image: Some(height) },
+            texture_size,
+        );
+
+        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let sampler = context.device().create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let texture_bind_group = context.device().create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("texture_bind_group"),
+            layout: &texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&texture_view) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
+            ],
+        });
+
+
+        // CAMERA
+        let mut camera = OrbitCamera::new(
+            context,
+            45.0,
+            context.size().x / context.size().y,
+            0.1,
+            100.0,
+        );
+        camera
+            .set_target(cgmath::point3(0.0, 0.0, 0.0))
+            .set_polar(cgmath::point3(2.0, 0.0, 0.0))
+            .update(context);
+
+        Self {
+            vertex_buffer,
+            index_buffer,
+            render_pipeline,
+            num_indices,
+            camera,
+            texture_bind_group,
+            light_bind_group,
+            // _light_buffer: light_buffer,
+        }
+    }
+}
+
+impl App for TexturedCubeApp {
+    fn input(&mut self, input: egui::InputState, context: &Context) {
+        self.camera.input(input, context);
+    }
+
+    fn render(&self, render_pass: &mut wgpu::RenderPass<'_>) {
+        render_pass.set_pipeline(&self.render_pipeline);
+        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        //Bind Groups
+        render_pass.set_bind_group(0, self.camera.bind_group(), &[]);
+        render_pass.set_bind_group(1, &self.texture_bind_group, &[]);
+        render_pass.set_bind_group(2, &self.light_bind_group, &[]);
+
+
+        //---
+        render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
+    }
+}
