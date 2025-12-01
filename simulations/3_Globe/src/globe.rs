@@ -14,10 +14,16 @@ use wgpu_bootstrap::{
 const SHADER_FILE: &str = "globe_shader.wgsl";
 // const TEXTURE_FILE: &str = "../../textures/texture.png";
 // const TEXTURE_FILE: &str = "../../textures/earth2048.bmp";
-const TEXTURE_FILE: &str = "../../textures/moon1024.bmp";
+// const TEXTURE_FILE: &str = "../../textures/moon1024.bmp";
+const TEXTURE_FILE: &str = "../../textures/grey.png";
 
-const LIGHT_INIT: [f32; 4] = [2.0, 2.0, 2.0, 0.0];
+// Specular light parameters
+const LIGHT_POS: [f32; 4] = [2.0, 2.0, 2.0, 0.0];
+const KS: f32 = 0.15;
+const SHININESS: f32 = 128.0;
+const _PAD: [f32;2] = [0.0, 0.0];
 
+// Globe geometry
 const RADIUS: f32 = 1.0;
 const STACK_COUNT: usize = 64;
 const SECTOR_COUNT: usize = 128;
@@ -34,7 +40,10 @@ struct Vertex {
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct LightUniform {
-    light: [f32; 4],
+    light: [f32; 4],   // maps to vec4<f32> in WGSL
+    ks: f32,           // specular strength
+    shininess: f32,    // shininess exponent
+    _pad: [f32; 2],    // padding to 16-byte alignment
 }
 
 impl Vertex {
@@ -158,7 +167,12 @@ impl SphereApp {
             ],
         });
 
-        let initial_light = LightUniform { light: LIGHT_INIT };
+        let initial_light: LightUniform = LightUniform { 
+            light: LIGHT_POS,
+            ks: KS,
+            shininess : SHININESS,
+            _pad: _PAD,
+        };
 
         let light_buffer = context.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Light Buffer"),
