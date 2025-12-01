@@ -184,7 +184,7 @@ impl CubeApp {
             .device()
             .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("Shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/cube_shader.wgsl").into()),
+                source: wgpu::ShaderSource::Wgsl(include_str!("cube_shader.wgsl").into()),
             });
 
         let pipeline_layout =

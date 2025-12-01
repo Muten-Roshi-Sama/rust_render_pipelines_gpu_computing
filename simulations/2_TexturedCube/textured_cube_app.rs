@@ -11,8 +11,8 @@ use wgpu_bootstrap::{
 
 // =========== CONFIGURATIONS =============
 
-const SHADER_FILE: &str = "shaders/cube_textured_shader.wgsl";
-const TEXTURE_FILE: &str = "textures/texture.png";
+const SHADER_FILE: &str = "cube_textured_shader.wgsl";
+const TEXTURE_FILE: &str = "../../textures/texture.png";
 
 const LIGHT_INIT: [f32; 4] = [2.0, 2.0, 2.0, 0.0];
 
