@@ -1440,6 +1440,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "globe_specular"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "cgmath",
+ "eframe",
+ "env_logger",
+ "image 0.24.9",
+ "log",
+ "wgpu-bootstrap",
+]
+
+[[package]]
 name = "glow"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
