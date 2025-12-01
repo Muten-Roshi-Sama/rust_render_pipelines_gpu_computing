@@ -1,6 +1,5 @@
 // render_cube_textured.rs
 use std::path::Path;
-use std::num::NonZeroU32;
 
 use wgpu_bootstrap::{
     cgmath, egui,
@@ -278,16 +277,6 @@ impl TexturedCubeApp {
                 });
 
         // LOAD img
-        let shader_path = Path::new(env!("CARGO_MANIFEST_DIR")).join(SHADER_FILE);
-        let shader_src =
-            std::fs::read_to_string(&shader_path).expect("failed to read shader file");
-        let shader = context.device().create_shader_module(
-            wgpu::ShaderModuleDescriptor {
-                label: Some("textured_shader"),
-                source: wgpu::ShaderSource::Wgsl(shader_src.into()),
-            },
-        );
-
         let img_path = Path::new(env!("CARGO_MANIFEST_DIR")).join(TEXTURE_FILE);
         let img = image::open(&img_path).expect("failed to load texture").to_rgba8();
         let (width, height) = img.dimensions();

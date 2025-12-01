@@ -1,4 +1,4 @@
-mod cube_app;
+// main.rs
 mod textured_cube_app;
 
 use std::sync::Arc;

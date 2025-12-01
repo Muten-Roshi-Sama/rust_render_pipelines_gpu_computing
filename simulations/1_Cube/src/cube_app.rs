@@ -1,9 +1,15 @@
+use std::path::Path;
+
 use wgpu_bootstrap::{
     cgmath, egui,
     util::orbit_camera::{CameraUniform, OrbitCamera},
     wgpu::{self, util::DeviceExt},
     App, Context,
 };
+
+//
+const SHADER_FILE: &str = "cube_shader.wgsl";
+
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -180,12 +186,19 @@ impl CubeApp {
             .device()
             .create_bind_group_layout(&CameraUniform::desc());
 
-        let shader = context
-            .device()
-            .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("Shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("cube_shader.wgsl").into()),
-            });
+        
+        // SHADER
+        let shader_path = Path::new(env!("CARGO_MANIFEST_DIR")).join(SHADER_FILE);
+        let shader_src =
+            std::fs::read_to_string(&shader_path).expect("failed to read shader file");
+        let shader = context.device().create_shader_module(
+            wgpu::ShaderModuleDescriptor {
+                label: Some("shader"),
+                source: wgpu::ShaderSource::Wgsl(shader_src.into()),
+            },
+        );
+
+        
 
         let pipeline_layout =
             context
